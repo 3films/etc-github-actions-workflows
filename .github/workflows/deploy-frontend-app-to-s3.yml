@@ -9,6 +9,10 @@ on:
         required: true
         default: $default-branch
       node-version:
+        type: string
+        description: ビルドに使用するNode.jsのバージョン
+        required: true
+        default: 14
       slack-display-stage-name:
         type: string
         description: Slack通知に表示するステージ名
@@ -79,7 +83,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v3
         with:
-          node-version: 14
+          node-version: ${{ inputs.node-version }}
 
       # @see https://qiita.com/qualitia_cdev/items/407b0df9c0a0f0f45bbc
       - name: Cache node modules
