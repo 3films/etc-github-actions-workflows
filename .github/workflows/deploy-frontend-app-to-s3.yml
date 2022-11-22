@@ -29,6 +29,7 @@ on:
         type: string
         description: CloudFrontのInvalidation指定PATH
         required: true
+        default: /*
       dotenv-ssm-parameter:
         type: string
         description: .envの内容を保持するSSMパラメータ名
