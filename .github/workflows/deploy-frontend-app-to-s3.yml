@@ -7,7 +7,6 @@ on:
         type: string
         description: デプロイするGitBranch名(反映元)
         required: true
-        default: $default-branch
       node-version:
         type: string
         description: ビルドに使用するNode.jsのバージョン
