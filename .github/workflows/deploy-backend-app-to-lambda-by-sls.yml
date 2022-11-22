@@ -17,7 +17,6 @@ on:
         type: string
         description: デプロイするGitBranch名(反映元)
         required: true
-        default: $default-branch
       slack-display-stage-name:
         type: string
         description: Slack通知に表示するステージ名
