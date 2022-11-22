@@ -1,0 +1,12 @@
+{
+    "name": "Deploy Frontend App to S3 Workflow",
+    "description": "Deploy Frontend App to S3 starter workflow.",
+    "categories": [
+        "Vue",
+        "JavaScript"
+    ],
+    "filePatterns": [
+        "package.json$",
+        ".*\\.md$"
+    ]
+}

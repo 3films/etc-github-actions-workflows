@@ -1,0 +1,312 @@
+name: Deploy Frontend App to S3
+
+on:
+  workflow_call:
+    inputs:
+      checkout-branch:
+        type: string
+        description: デプロイするGitBranch名(反映元)
+        required: true
+        default: $default-branch
+      node-version:
+        type: string
+        description: ビルドに使用するNode.jsのバージョン
+        required: true
+        default: 14
+      slack-display-stage-name:
+        type: string
+        description: Slack通知に表示するステージ名
+        required: true
+      s3-deploy-to:
+        type: string
+        description: デプロイ先のS3バケット名
+        required: true
+      cloudfront-id:
+        type: string
+        description: CloudFrontのリソースID
+        required: true
+      cloudfront-invalidation-path:
+        type: string
+        description: CloudFrontのInvalidation指定PATH
+        required: true
+        default: /*
+      dotenv-ssm-parameter:
+        type: string
+        description: .envの内容を保持するSSMパラメータ名
+        required: true
+      aws-region:
+        type: string
+        description: AWSリージョン
+        required: true
+        default: ap-northeast-1
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        description: AWSアクセスキーID
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        description: AWSシークレットアクセスキー
+        required: true
+      SLACK_WEBHOOK_URL:
+        description: Slack通知 Webhook URL
+        required: true
+
+jobs:
+  BuildAndUpload:
+    name: build and upload
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+          ref: ${{ inputs.checkout-branch }}
+
+      - name: Create Version Text
+        run: git rev-parse HEAD > public/version.txt
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1-node16
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Install aws-cli
+        uses: unfor19/install-aws-cli-action@v1.0.4
+        with:
+          version: 2
+
+      - name: Get DotEnv from AWS Systems Manager - Parameter Store
+        run: aws ssm get-parameters --names ${{ inputs.dotenv-ssm-parameter }} --with-decryption | jq -r ".Parameters[].Value" > .env
+        shell: bash
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      # @see https://qiita.com/qualitia_cdev/items/407b0df9c0a0f0f45bbc
+      - name: Cache node modules
+        id: node_modules_cache_id
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-node-modules
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}-
+            ${{ runner.os }}-build-
+            ${{ runner.os }}-
+
+      # @notice Cacheが無い場合にのみ実行
+      - name: npm install
+        if: steps.node_modules_cache_id.outputs.cache-hit != 'true'
+        run: npm install
+
+      # @notice npm install時にproductionにしてしまうと"VueCLI"がインストールされない
+      - name: npm build
+        run: npm run build --production
+        env:
+          NODE_ENV: production
+
+      # - name: deploy
+      #   uses: jackdcasey/vue-cli-plugin-s3-deploy-action@master
+      #   env:
+      #     AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: deploy by aws cli
+        run: aws s3 sync dist/ s3://${{ inputs.s3-deploy-to }}/ --delete
+
+      - name: CloudFront Initialize
+        run: aws configure set preview.cloudfront true
+
+      - name: CloudFront Invalidation
+        run: aws cloudfront create-invalidation --distribution-id ${{ inputs.cloudfront-id }} --paths '${{ inputs.cloudfront-invalidation-path }}'
+
+      - name: Slack Notification on Success
+        if: success()
+        uses: tokorom/action-slack-incoming-webhook@main
+        env:
+          INCOMING_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          attachments: |
+            [
+              {
+                "color": "#2EB886",
+                "blocks": [
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": "自動デプロイ成功 : *${{ inputs.slack-display-stage-name }}* `${{ github.repository }}`"
+                    }
+                  },
+                  {
+                    "type": "divider"
+                  },
+                  {
+                    "type": "context",
+                    "elements": [
+                      {
+                        "type": "image",
+                        "image_url": "${{ github.event.sender.avatar_url }}",
+                        "alt_text": "${{ github.actor }}"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": " ${{ github.actor }}"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": "*PR Message：*"
+                    }
+                  },
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": " ${{ github.event.pull_request.title }} ${{ env.pr_body }}"
+                    }
+                  },
+                  {
+                    "type": "section",
+                    "fields": [
+                      {
+                        "type": "mrkdwn",
+                        "text": "*PR URL*"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": " ${{ github.event.pull_request._links.html.href }}"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": "*GitHub Actions URL*"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": " ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": "*Commit Hash (After)*"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": " `${{ github.event.after }}`"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": "*Commit Hash (Before)*"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": " `${{ github.event.before }}`"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+
+      - name: Slack Notification on Failure
+        if: failure()
+        uses: tokorom/action-slack-incoming-webhook@main
+        env:
+          INCOMING_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          attachments: |
+            [
+              {
+                "color": "#A30100",
+                "blocks": [
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": "自動デプロイ失敗 : *${{ inputs.slack-display-stage-name }}* `${{ github.repository }}`"
+                    }
+                  },
+                  {
+                    "type": "divider"
+                  },
+                  {
+                    "type": "context",
+                    "elements": [
+                      {
+                        "type": "image",
+                        "image_url": "${{ github.event.sender.avatar_url }}",
+                        "alt_text": "${{ github.actor }}"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": "${{ github.actor }}"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": "*PR Message：*"
+                    }
+                  },
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": "${{ github.event.pull_request.title }} ${{ env.pr_body }}"
+                    }
+                  },
+                  {
+                    "type": "section",
+                    "fields": [
+                      {
+                        "type": "mrkdwn",
+                        "text": "*PR URL*"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": "${{ github.event.pull_request._links.html.href }}"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": "*GitHub Actions URL*"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": "*Commit Hash (After)*"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": "`${{ github.event.after }}`"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": "*Commit Hash (Before)*"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": "`${{ github.event.before }}`"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+

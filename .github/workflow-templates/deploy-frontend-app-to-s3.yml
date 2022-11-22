@@ -1,0 +1,38 @@
+name: Deploy Frontend App to S3 Workflow
+
+on:
+  # 手動でActionを実行する場合
+  workflow_dispatch:
+    inputs:
+      branch-name:
+        type: choice
+        description: 'デプロイするGitBranch名(反映元)'
+        required: true
+        default: $default-branch
+        options:
+          - $default-branch
+          - 'develop'
+  # プルリクエストによりメインブランチにマージされた場合
+  pull_request:
+    branches:
+      - $default-branch
+    types: [closed]
+
+jobs:
+  deploy:
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+    # @notice 出来ればバージョンを指定
+    uses: 3films/etc-github-actions-workflows/.github/workflows/deploy-frontend-app-to-s3.yml@master
+    with:
+      checkout-branch: ${{ inputs.branch-name }}
+      node-version: 14
+      slack-display-stage-name: ステージング
+      s3-deploy-to: example-s3-bucket
+      cloudfront-id: XXXXXXXX
+      cloudfront-invalidation-path: /*
+      dotenv-ssm-parameter: /example-app/.env.stg
+      aws-region: ap-northeast-1
+    secrets:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_EXAMPLE }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_EXAMPLE }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_EXAMPLE }}

@@ -1,0 +1,283 @@
+name: Deploy Backend App to Lambda by Serverless
+
+on:
+  workflow_call:
+    inputs:
+      serverless-stage:
+        type: string
+        description: Serverless Framework Stage指定(dev|stg|prod)
+        required: true
+        default: dev
+      # @todo serverless.yml指定方法の汎化
+      serverless-yml-name:
+        type: string
+        description: 使用するServerlessYaml名
+        required: true
+      checkout-branch:
+        type: string
+        description: デプロイするGitBranch名(反映元)
+        required: true
+        default: $default-branch
+      slack-display-stage-name:
+        type: string
+        description: Slack通知に表示するステージ名
+        required: true
+      dotenv-ssm-parameter:
+        type: string
+        description: .envの内容を保持するSSMパラメータ名
+        required: true
+      aws-region:
+        type: string
+        description: AWSリージョン
+        required: true
+        default: ap-northeast-1
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        description: AWSアクセスキーID
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        description: AWSシークレットアクセスキー
+        required: true
+      SLACK_WEBHOOK_URL:
+        description: Slack通知 Webhook URL
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Set PR_BODY (for Slack)
+        if: github.event_name == 'pull_request'
+        run: echo 'pr_body='$(echo "${{ github.event.pull_request.body }}" | tr -d "\r" | perl -pe 's/\n/\\n/g' | perl -pe 's/"/\\"/g') >> $GITHUB_ENV
+
+      - name: Set Comment (for Slack)
+        if: github.event_name == 'workflow_dispatch'
+        run: echo 'pr_body='$(echo "${{ github.event.inputs.comment }}" | tr -d "\r" | perl -pe 's/\n/\\n/g' | perl -pe 's/"/\\"/g') >> $GITHUB_ENV
+
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+          ref: ${{ inputs.branch-name }}
+
+      - name: Get current commit-hash
+        run: echo 'commit_hash='$(git rev-parse HEAD) >> $GITHUB_ENV
+
+      - name: Set Commit Subject (for Slack)
+        run: echo 'commit_subject='$(git log -1 --pretty=format:%s | tr -d "\r" | perl -pe 's/\n/\\n/g' | perl -pe 's/"/\\"/g') >> $GITHUB_ENV
+
+      - name: Set Commit Message (for Slack)
+        run: echo 'commit_message='$(git log -1 --pretty=format:%b | tr -d "\r" | perl -pe 's/\n/\\n/g' | perl -pe 's/"/\\"/g') >> $GITHUB_ENV
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1-node16
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Install aws-cli
+        uses: unfor19/install-aws-cli-action@v1.0.4
+        with:
+          version: 2
+
+      - name: Get DotEnv from AWS Systems Manager - Parameter Store
+        run: aws ssm get-parameters --names ${{ inputs.dotenv-ssm-parameter }} --with-decryption | jq -r ".Parameters[].Value" > .env
+
+      - name: Setup PHP with composer v2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          tools: composer:v2
+          extensions: mbstring, dom, fileinfo, bcmath
+          coverage: none
+
+      - name: Determine Composer cache directory
+        run: "echo \"COMPOSER_CACHE_DIR=$(composer config cache-dir)\" >> $GITHUB_ENV"
+
+      - name: Cache dependencies installed with Composer
+        uses: actions/cache@v3
+        with:
+          path: "${{ env.COMPOSER_CACHE_DIR }}"
+          key: os-${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
+          restore-keys: |
+            os-${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
+      - name: Run Composer Install
+        run: composer install --no-dev --no-progress --no-suggest --prefer-dist --optimize-autoloader
+
+      - name: Laravel Cache Clear
+        run: php artisan config:clear
+
+      - name: Serverless Switch Yaml-File
+        run: serverless/switch.sh ${{ inputs.serverless-yml-name }}
+
+      - name: Serverless Framework deploy
+        uses: serverless/github-action@v2
+        with:
+          args: -c "serverless plugin install --name serverless-domain-manager && serverless deploy --stage=${{ inputs.serverless-stage }} --verbose"
+          entrypoint: /bin/sh
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Slack Notification on Success
+        if: success()
+        uses: tokorom/action-slack-incoming-webhook@main
+        env:
+          INCOMING_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          attachments: |
+            [
+              {
+                "color": "#2EB886",
+                "blocks": [
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": "自動デプロイ成功 : *${{ inputs.slack-display-stage-name }}* `${{ github.repository }}`"
+                    }
+                  },
+                  {
+                    "type": "divider"
+                  },
+                  {
+                    "type": "context",
+                    "elements": [
+                      {
+                        "type": "image",
+                        "image_url": "${{ github.event.sender.avatar_url }}",
+                        "alt_text": " ${{ github.actor }}"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": " ${{ github.actor }}"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": "*commit*: `${{ env.commit_hash }}`"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": " *${{ env.commit_subject }}*\n${{ env.commit_message }}"
+                    }
+                  },
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": "```${{ github.event.pull_request.title }}\n${{ env.pr_message }}```"
+                    }
+                  },
+                  {
+                    "type": "section",
+                    "fields": [
+                      {
+                        "type": "mrkdwn",
+                        "text": "*PR URL*"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": " ${{ github.event.pull_request._links.html.href }} "
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": "*GitHub Actions URL*"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+      - name: Slack Notification on Failure
+        if: failure()
+        uses: tokorom/action-slack-incoming-webhook@main
+        env:
+          INCOMING_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          attachments: |
+            [
+              {
+                "color": "#A30100",
+                "blocks": [
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": "自動デプロイ失敗 : *${{ inputs.slack-display-stage-name }}* `${{ github.repository }}`"
+                    }
+                  },
+                  {
+                    "type": "divider"
+                  },
+                  {
+                    "type": "context",
+                    "elements": [
+                      {
+                        "type": "image",
+                        "image_url": "${{ github.event.sender.avatar_url }}",
+                        "alt_text": " ${{ github.actor }}"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": " ${{ github.actor }}"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": "*commit*: `${{ env.commit_hash }}`"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": "*${{ env.commit_subject }}*\n${{ env.commit_message }}"
+                    }
+                  },
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": "```${{ github.event.pull_request.title }}\n${{ env.pr_message }}```"
+                    }
+                  },
+                  {
+                    "type": "section",
+                    "fields": [
+                      {
+                        "type": "mrkdwn",
+                        "text": "*PR URL*"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": " ${{ github.event.pull_request._links.html.href }} "
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": "*GitHub Actions URL*"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": " ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+
+
