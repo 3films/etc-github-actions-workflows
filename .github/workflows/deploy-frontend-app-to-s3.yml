@@ -55,7 +55,6 @@ jobs:
       #   env:
       #     GITHUB_CONTEXT: ${{ toJson(github) }}
       #   run: echo "$GITHUB_CONTEXT"
-
       - name: Checkout
         uses: actions/checkout@v3
         with:
@@ -222,7 +221,6 @@ jobs:
         env:
           INCOMING_WEBHOOK_URL: ${{ secrets.F3NOSUKE_SLACK_WEBHOOK_URL }}
         with:
-#          text: 自動デプロイ失敗（${{ env.SLACK_DISPLAY_STAGE }}）${{ github.repository }}
           attachments: |
             [
               {
