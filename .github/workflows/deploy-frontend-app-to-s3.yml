@@ -65,7 +65,7 @@ jobs:
         run: git rev-parse HEAD > public/version.txt
 
       - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v1-node16
+        uses: aws-actions/configure-aws-credentials@v1-node16
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -123,7 +123,7 @@ jobs:
         run: aws configure set preview.cloudfront true
 
       - name: CloudFront Invalidation
-      run: aws cloudfront create-invalidation --distribution-id ${{ inputs.cloudfront-id }} --paths '${{ inputs.cloudfront-invalidation-path }}'
+        run: aws cloudfront create-invalidation --distribution-id ${{ inputs.cloudfront-id }} --paths '${{ inputs.cloudfront-invalidation-path }}'
 
       - name: Slack Notification on Success
         if: success()
