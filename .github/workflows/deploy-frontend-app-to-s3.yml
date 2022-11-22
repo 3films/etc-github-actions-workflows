@@ -234,7 +234,7 @@ jobs:
                     "type": "section",
                     "text": {
                       "type": "mrkdwn",
-                      "text": "自動デプロイ失敗 : *${{ env.SLACK_DISPLAY_STAGE }}* `${{ github.repository }}`"
+                      "text": "自動デプロイ失敗 : *${{ inputs.slack-display-stage-name }}* `${{ github.repository }}`"
                     }
                   },
                   {
