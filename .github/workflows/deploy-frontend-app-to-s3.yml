@@ -53,6 +53,10 @@ jobs:
   BuildAndUpload:
     name: build and upload
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout
