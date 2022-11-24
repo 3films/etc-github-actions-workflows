@@ -1,0 +1,39 @@
+name: Deploy Backend PHP App to Lambda by Serverless
+
+on:
+  # 手動でActionを実行する場合
+  workflow_dispatch:
+    inputs:
+      branch-name:
+        type: choice
+        description: デプロイするGitBranch名(反映元)
+        required: true
+        default: $default-branch
+        options:
+          - $default-branch
+          - develop
+  # プルリクエストによりメインブランチにマージされた場合
+  pull_request:
+    branches:
+      - $default-branch
+    types: [closed]
+
+jobs:
+  deploy:
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+    # @notice 出来ればバージョンを指定
+    uses: 3films/etc-github-actions-workflows/.github/workflows/deploy-backend-php-to-lambda-by-sls.yml@master
+    with:
+      checkout-branch: ${{ inputs.branch-name }}
+      serverless-stage: prod
+      serverless-yml-name: default
+      slack-display-stage-name: 本番
+      dotenv-ssm-parameter: /example-app/.env.prod
+      aws-region: ap-northeast-1
+      php-version: '8.1'
+      php-extensions: mbstring, dom, fileinfo, bcmath
+    secrets:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_EXAMPLE }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_EXAMPLE }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_EXAMPLE }}
+
