@@ -1,4 +1,4 @@
-name: Deploy Backend App to Lambda by Serverless
+name: Deploy Backend PHP App to Lambda by Serverless
 
 on:
   workflow_call:
@@ -30,6 +30,16 @@ on:
         description: AWSリージョン
         required: true
         default: ap-northeast-1
+      php-version:
+        type: string
+        description: PHPバージョン
+        required: true
+        default: '8.1'
+      php-extensions:
+        type: string
+        description: PHP Extensions
+        required: true
+        default: mbstring, dom, fileinfo, bcmath
     secrets:
       AWS_ACCESS_KEY_ID:
         description: AWSアクセスキーID
@@ -91,9 +101,9 @@ jobs:
       - name: Setup PHP with composer v2
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.1'
+          php-version: ${{ inputs.php-version }}
           tools: composer:v2
-          extensions: mbstring, dom, fileinfo, bcmath
+          extensions: ${{ inputs.php-extensions }}
           coverage: none
 
       - name: Determine Composer cache directory
