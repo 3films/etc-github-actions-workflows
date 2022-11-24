@@ -250,7 +250,7 @@ jobs:
                       },
                       {
                         "type": "mrkdwn",
-                        "text": "${{ github.actor }}"
+                        "text": " ${{ github.actor }}"
                       }
                     ]
                   },
@@ -265,7 +265,7 @@ jobs:
                     "type": "section",
                     "text": {
                       "type": "mrkdwn",
-                      "text": "${{ github.event.pull_request.title }} ${{ env.pr_body }}"
+                      "text": " ${{ github.event.pull_request.title }} ${{ env.pr_body }}"
                     }
                   },
                   {
@@ -277,7 +277,7 @@ jobs:
                       },
                       {
                         "type": "mrkdwn",
-                        "text": "${{ github.event.pull_request._links.html.href }}"
+                        "text": " ${{ github.event.pull_request._links.html.href }}"
                       },
                       {
                         "type": "mrkdwn",
@@ -293,7 +293,7 @@ jobs:
                       },
                       {
                         "type": "mrkdwn",
-                        "text": "`${{ github.event.after }}`"
+                        "text": " `${{ github.event.after }}`"
                       },
                       {
                         "type": "mrkdwn",
@@ -301,7 +301,7 @@ jobs:
                       },
                       {
                         "type": "mrkdwn",
-                        "text": "`${{ github.event.before }}`"
+                        "text": " `${{ github.event.before }}`"
                       }
                     ]
                   }

@@ -254,7 +254,7 @@ jobs:
                     "type": "section",
                     "text": {
                       "type": "mrkdwn",
-                      "text": "*${{ env.commit_subject }}*\n${{ env.commit_message }}"
+                      "text": " *${{ env.commit_subject }}*\n${{ env.commit_message }}"
                     }
                   },
                   {
