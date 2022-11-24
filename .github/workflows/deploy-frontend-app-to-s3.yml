@@ -59,6 +59,10 @@ jobs:
         shell: bash
 
     steps:
+      - name: Set PR_BODY (for Slack)
+        if: github.event_name == 'pull_request'
+        run: echo 'pr_body='$(echo "${{ github.event.pull_request.body }}" | tr -d "\r" | perl -pe 's/\n/\\n/g' | perl -pe 's/"/\\"/g') >> $GITHUB_ENV
+        
       - name: Checkout
         uses: actions/checkout@v3
         with:
