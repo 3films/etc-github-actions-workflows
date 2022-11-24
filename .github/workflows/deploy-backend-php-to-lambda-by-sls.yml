@@ -1,4 +1,4 @@
-name: Deploy Backend App to Lambda by Serverless
+name: Deploy Backend PHP App to Lambda by Serverless
 
 on:
   workflow_call:
