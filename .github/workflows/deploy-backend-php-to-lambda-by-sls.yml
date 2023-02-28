@@ -130,12 +130,12 @@ jobs:
         run: serverless/switch.sh ${{ inputs.serverless-yml-name }}
 
       - name: Setup Node (use volta)
-        if: inputs.serverless-use-npx
+        if: inputs.serverless-use-npx == 'true'
         uses: volta-cli/action@v3
 
       # @see https://qiita.com/qualitia_cdev/items/407b0df9c0a0f0f45bbc
       - name: Cache node modules
-        if: inputs.serverless-use-npx
+        if: inputs.serverless-use-npx == 'true'
         id: node_modules_cache_id
         uses: actions/cache@v3
         env:
@@ -150,15 +150,15 @@ jobs:
       
       # @notice Cacheが無い場合にのみ実行
       - name: npm install
-        if: inputs.serverless-use-npx && steps.node_modules_cache_id.outputs.cache-hit != 'true'
+        if: inputs.serverless-use-npx == 'true' && steps.node_modules_cache_id.outputs.cache-hit != 'true'
         run: npm install
 
       - name: Serverless Framework deploy (npm / npx)
-        if: inputs.serverless-use-npx
+        if: inputs.serverless-use-npx == 'true'
         run: npx sls deploy --stage=${{ inputs.serverless-stage }} --verbose
 
       - name: Serverless Framework deploy (use actions)
-        if: ${{ !inputs.serverless-use-npx }}
+        if: inputs.serverless-use-npx != 'true'
         uses: serverless/github-action@v2
         with:
           args: -c "serverless plugin install --name serverless-domain-manager && serverless deploy --stage=${{ inputs.serverless-stage }} --verbose"
