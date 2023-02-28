@@ -3,6 +3,10 @@ name: Deploy Backend PHP App to Lambda by Serverless
 on:
   workflow_call:
     inputs:
+      serverless-use-npx:
+        type: boolean
+        description: npm で Serverless Framework を導入・使用する場合
+        default: false
       serverless-stage:
         type: string
         description: Serverless Framework Stage指定(dev|stg|prod)
@@ -125,7 +129,36 @@ jobs:
       - name: Serverless Switch Yaml-File
         run: serverless/switch.sh ${{ inputs.serverless-yml-name }}
 
-      - name: Serverless Framework deploy
+      - name: Setup Node (use volta)
+        if: inputs.serverless-use-npx
+        uses: volta-cli/action@v3
+
+      # @see https://qiita.com/qualitia_cdev/items/407b0df9c0a0f0f45bbc
+      - name: Cache node modules
+        if: inputs.serverless-use-npx
+        id: node_modules_cache_id
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-node-modules
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}-
+            ${{ runner.os }}-build-
+            ${{ runner.os }}-
+      
+      # @notice Cacheが無い場合にのみ実行
+      - name: npm install
+        if: inputs.serverless-use-npx && steps.node_modules_cache_id.outputs.cache-hit != 'true'
+        run: npm install
+
+      - name: Serverless Framework deploy (npm / npx)
+        if: inputs.serverless-use-npx
+        run: npx sls deploy --stage=${{ inputs.serverless-stage }} --verbose
+
+      - name: Serverless Framework deploy (use actions)
+        if: ${{ !inputs.serverless-use-npx }}
         uses: serverless/github-action@v2
         with:
           args: -c "serverless plugin install --name serverless-domain-manager && serverless deploy --stage=${{ inputs.serverless-stage }} --verbose"
