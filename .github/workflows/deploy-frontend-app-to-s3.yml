@@ -84,6 +84,10 @@ jobs:
         with:
           version: 2
 
+      - name: Fix AWS config permissions
+        run: |
+          sudo chown -R $USER:$USER /home/runner/.aws
+
       - name: Get DotEnv from AWS Systems Manager - Parameter Store
         run: aws ssm get-parameters --names ${{ inputs.dotenv-ssm-parameter }} --with-decryption | jq -r ".Parameters[].Value" > .env
         shell: bash
